@@ -1,0 +1,38 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from keras.models import Sequential
+from keras.layers import Dense
+import numpy as np
+
+
+SLP_data = pd.read_csv('SLPdata.csv')
+lonlat_data = pd.read_csv('C:/Users/User/Desktop/SLPlonlat.csv', names=['Longitude', 'Latitude'])
+lonlat_data = lonlat_data.drop([0])
+lonlat_data["Longitude"] = lonlat_data["Longitude"].astype(float)
+lonlat_data["Latitude"] = lonlat_data["Latitude"].astype(float)
+
+monthly_means = SLP_data.groupby(temperature_data.index % 12).mean()
+anomalies = SLP_data.subtract(monthly_means.iloc[SLP_data.index % 12].values).T
+
+scaler = MinMaxScaler()
+anomalies_norm = scaler.fit_transform(anomalies)
+
+input_neurons = output_neurons = anomalies_norm.shape[1]
+hidden_neurons = 128
+
+encoder = Sequential()
+encoder.add(Dense(hidden_neurons, activation='relu', input_shape=(input_neurons,)))
+decoder = Sequential()
+decoder.add(Dense(output_neurons, activation='sigmoid', input_shape=(hidden_neurons,)))
+autoencoder = Sequential([encoder, decoder])
+autoencoder.compile(optimizer='adam', loss='mse')
+
+autoencoder.fit(anomalies_norm, anomalies_norm, epochs=19, batch_size=32, shuffle=True)
+
+encoded_anomalies_data = encoder.predict(anomalies_norm)
+
+non_zero_columns = np.any(encoded_anomalies_data != 0, axis=0)
+
+filtered_encoded_anomalies_data = encoded_anomalies_data[:, non_zero_columns]
