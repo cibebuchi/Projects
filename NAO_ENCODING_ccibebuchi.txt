@@ -1,0 +1,51 @@
+from keras.layers import Dense
+from keras.models import Sequential
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+import numpy as np
+import pandas as pd
+
+# Load and preprocess the data
+SLP_data = pd.read_csv('SLPdata.csv')
+monthly_means = SLP_data.groupby(SLP_data.index % 12).mean()
+anomalies = SLP_data.subtract(monthly_means.iloc[SLP_data.index % 12].values).T
+
+# Split the data into training, validation, and test sets
+train_data, test_data = train_test_split(anomalies, test_size=0.2, random_state=42)
+train_data, val_data = train_test_split(train_data, test_size=0.2, random_state=42)
+
+# Normalize the data
+scaler = MinMaxScaler()
+train_data_norm = scaler.fit_transform(train_data)
+val_data_norm = scaler.transform(val_data)
+test_data_norm = scaler.transform(test_data)
+
+# Neural network architecture
+input_neurons = output_neurons = train_data_norm.shape[1]
+hidden_neurons = 128
+
+encoder = Sequential()
+encoder.add(Dense(hidden_neurons, activation='relu', input_shape=(input_neurons,)))
+decoder = Sequential()
+decoder.add(Dense(output_neurons, activation='sigmoid', input_shape=(hidden_neurons,)))
+autoencoder = Sequential([encoder, decoder])
+autoencoder.compile(optimizer='adam', loss='mse')
+
+# Train the model
+autoencoder.fit(train_data_norm, train_data_norm, epochs=19, batch_size=32, shuffle=True, validation_data=(val_data_norm, val_data_norm))
+
+# Predict encoded anomalies
+encoded_anomalies_data = encoder.predict(test_data_norm)
+
+# Filter non-zero columns
+non_zero_columns = np.any(encoded_anomalies_data != 0, axis=0)
+filtered_encoded_anomalies_data = encoded_anomalies_data[:, non_zero_columns]
+
+
+
+
+
+
+
+
+
