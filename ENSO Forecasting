@@ -1,0 +1,495 @@
+#SVR model
+
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
+from sklearn.metrics import mean_squared_error
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+# Create lagged features
+def create_lagged_features(data, lags):
+    for lag in range(1, lags + 1):
+        data[f'Index_Lag_{lag}'] = data['Index'].shift(lag)
+    data = data.dropna().reset_index(drop=True)  
+    return data
+
+# Split data into training, validation, and test sets
+def split_data(data, test_size, val_size):
+    val_size_adjusted = val_size / (1 - test_size)
+    train_idx = int(len(data) * (1 - test_size - val_size_adjusted))
+    val_idx = train_idx + int(len(data) * val_size_adjusted)
+    train_data = data[:train_idx]
+    val_data = data[train_idx:val_idx]
+    test_data = data[val_idx:]
+    return train_data, val_data, test_data
+
+# Prepare data for model input
+def prepare_data(data, feature_columns):
+    X = data[feature_columns].values
+    y = data['Index'].values
+    return X, y
+
+# Scale data
+def scale_features(X_train, X_val, X_test):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_val_scaled, X_test_scaled
+
+# Function to build and train a model
+def build_and_train_model(X_train, y_train, X_val, y_val):
+    model = SVR(kernel='rbf')
+    model.fit(X_train, y_train)
+    val_predictions = model.predict(X_val)
+    val_mse = mean_squared_error(y_val, val_predictions)
+    print(f"Validation MSE: {val_mse}")
+    return model
+
+# Execute the full analysis
+file_path = 'filepath/Nino12.txt'
+data = load_and_preprocess_data(file_path)
+lags = 6  # Number of lagged features to create
+data_with_lags = create_lagged_features(data, lags)
+train_data, val_data, test_data = split_data(data_with_lags, test_size=0.2, val_size=0.1)
+feature_columns = [f'Index_Lag_{i}' for i in range(1, lags + 1)]
+X_train, y_train = prepare_data(train_data, feature_columns)
+X_val, y_val = prepare_data(val_data, feature_columns)
+X_test, y_test = prepare_data(test_data, feature_columns)
+X_train_scaled, X_val_scaled, X_test_scaled = scale_features(X_train, X_val, X_test)
+svr_model = build_and_train_model(X_train_scaled, y_train, X_val_scaled, y_val)
+test_predictions = svr_model.predict(X_test_scaled)
+test_mse = mean_squared_error(y_test, test_predictions)
+print(f"Test MSE: {test_mse}")
+results = test_data[['Year', 'Month']].copy()
+results['Actual'] = y_test
+results['Predicted'] = test_predictions
+results.to_csv('filepath/PredNino12_SVR.txt', index=False)
+print("Predictions saved to 'Nino4pred_SVR.csv'")
+
+
+
+**************************************************************************************************
+#GBR Model 
+
+
+import pandas as pd
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+# Create lagged features
+def create_lagged_features(data, lags):
+    for lag in range(1, lags + 1):
+        data[f'Index_Lag_{lag}'] = data['Index'].shift(lag)
+    data = data.dropna().reset_index(drop=True)  
+    return data
+
+# Split data into training, validation, and test sets
+def split_data(data, test_size, val_size):
+    val_size_adjusted = val_size / (1 - test_size)
+    train_idx = int(len(data) * (1 - test_size - val_size_adjusted))
+    val_idx = train_idx + int(len(data) * val_size_adjusted)
+    train_data = data[:train_idx]
+    val_data = data[train_idx:val_idx]
+    test_data = data[val_idx:]
+    return train_data, val_data, test_data
+
+# Prepare data for model input
+def prepare_data(data, feature_columns):
+    X = data[feature_columns].values
+    y = data['Index'].values
+    return X, y
+
+# Scale data
+def scale_features(X_train, X_val, X_test):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_val_scaled, X_test_scaled
+
+# Function to build and train a GBR model
+def build_and_train_gbr_model(X_train, y_train, X_val, y_val):
+    model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=0)
+    model.fit(X_train, y_train)
+    val_predictions = model.predict(X_val)
+    val_mse = mean_squared_error(y_val, val_predictions)
+    print(f"Validation MSE: {val_mse}")
+    return model
+
+# Main execution block
+if __name__ == "__main__":
+    file_path = 'filepath/Nino12.txt'
+    data = load_and_preprocess_data(file_path)
+    lags = 6  # Number of lagged features to create
+    data_with_lags = create_lagged_features(data, lags)
+    train_data, val_data, test_data = split_data(data_with_lags, test_size=0.2, val_size=0.1)
+    feature_columns = [f'Index_Lag_{i}' for i in range(1, lags + 1)]
+    X_train, y_train = prepare_data(train_data, feature_columns)
+    X_val, y_val = prepare_data(val_data, feature_columns)
+    X_test, y_test = prepare_data(test_data, feature_columns)
+    X_train_scaled, X_val_scaled, X_test_scaled = scale_features(X_train, X_val, X_test)   
+    gbr_model = build_and_train_gbr_model(X_train_scaled, y_train, X_val_scaled, y_val) 
+    test_predictions = gbr_model.predict(X_test_scaled)
+    test_mse = mean_squared_error(y_test, test_predictions)
+    print(f"Test MSE: {test_mse}")
+    results = test_data[['Year', 'Month']].copy()
+    results['Actual'] = y_test
+    results['Predicted'] = test_predictions
+    results.to_csv('filepath/PredNino12_GBR.csv', index=False)
+    print("Predictions saved to 'PredNino4_GBR.csv'")
+
+*****************************************************************************************
+XGB model
+
+import pandas as pd
+from xgboost import XGBRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+# Create lagged features
+def create_lagged_features(data, lags):
+    for lag in range(1, lags + 1):
+        data[f'Index_Lag_{lag}'] = data['Index'].shift(lag)
+    data = data.dropna().reset_index(drop=True)  
+    return data
+
+# Split data into training, validation, and test sets
+def split_data(data, test_size, val_size):
+    val_size_adjusted = val_size / (1 - test_size)
+    train_idx = int(len(data) * (1 - test_size - val_size_adjusted))
+    val_idx = train_idx + int(len(data) * val_size_adjusted)
+    train_data = data[:train_idx]
+    val_data = data[train_idx:val_idx]
+    test_data = data[val_idx:]
+    return train_data, val_data, test_data
+
+# Prepare data for model input
+def prepare_data(data, feature_columns):
+    X = data[feature_columns].values
+    y = data['Index'].values
+    return X, y
+
+# Scale data
+def scale_features(X_train, X_val, X_test):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_val_scaled, X_test_scaled
+
+# Function to build and train an XGBoost model
+def build_and_train_xgboost_model(X_train, y_train, X_val, y_val):
+    model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=0)
+    model.fit(X_train, y_train, early_stopping_rounds=10, eval_set=[(X_val, y_val)], verbose=False)
+    val_predictions = model.predict(X_val)
+    val_mse = mean_squared_error(y_val, val_predictions)
+    print(f"Validation MSE: {val_mse}")
+    return model
+
+# Main execution block
+if __name__ == "__main__":
+    file_path = 'filepath/Nino12.txt'
+    data = load_and_preprocess_data(file_path)
+    lags = 6  # Number of lagged features to create
+    data_with_lags = create_lagged_features(data, lags)
+    train_data, val_data, test_data = split_data(data_with_lags, test_size=0.2, val_size=0.1)
+    feature_columns = [f'Index_Lag_{i}' for i in range(1, lags + 1)]
+    X_train, y_train = prepare_data(train_data, feature_columns)
+    X_val, y_val = prepare_data(val_data, feature_columns)
+    X_test, y_test = prepare_data(test_data, feature_columns)
+    X_train_scaled, X_val_scaled, X_test_scaled = scale_features(X_train, X_val, X_test)  
+    xgb_model = build_and_train_xgboost_model(X_train_scaled, y_train, X_val_scaled, y_val) 
+    test_predictions = xgb_model.predict(X_test_scaled)
+    test_mse = mean_squared_error(y_test, test_predictions)
+    print(f"Test MSE: {test_mse}")
+    results = test_data[['Year', 'Month']].copy()
+    results['Actual'] = y_test
+    results['Predicted'] = test_predictions
+    results.to_csv('filepath/PredNino12_XGB.csv', index=False)
+    print("Predictions saved to 'PredNino4_XGB.csv'")
+
+
+************************************************************************************************************
+
+KNN model
+
+import pandas as pd
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+# Create lagged features
+def create_lagged_features(data, lags):
+    for lag in range(1, lags + 1):
+        data[f'Index_Lag_{lag}'] = data['Index'].shift(lag)
+    data = data.dropna().reset_index(drop=True)  
+    return data
+
+# Split data into training, validation, and test sets
+def split_data(data, test_size, val_size):
+    val_size_adjusted = val_size / (1 - test_size)
+    train_idx = int(len(data) * (1 - test_size - val_size_adjusted))
+    val_idx = train_idx + int(len(data) * val_size_adjusted)
+    train_data = data[:train_idx]
+    val_data = data[train_idx:val_idx]
+    test_data = data[val_idx:]
+    return train_data, val_data, test_data
+
+# Prepare data for model input
+def prepare_data(data, feature_columns):
+    X = data[feature_columns].values
+    y = data['Index'].values
+    return X, y
+
+# Scale data
+def scale_features(X_train, X_val, X_test):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_val_scaled, X_test_scaled
+
+# Function to build and train a KNN Regressor model
+def build_and_train_knn_model(X_train, y_train, X_val, y_val, n_neighbors=5):
+    model = KNeighborsRegressor(n_neighbors=n_neighbors)
+    model.fit(X_train, y_train)
+    val_predictions = model.predict(X_val)
+    val_mse = mean_squared_error(y_val, val_predictions)
+    print(f"KNN Regressor Validation MSE: {val_mse}")
+    return model
+
+# Main execution block
+if __name__ == "__main__":
+    file_path = 'filepath/Nino12.txt'
+    data = load_and_preprocess_data(file_path)
+    lags = 6  # Number of lagged features to create
+    data_with_lags = create_lagged_features(data, lags)
+    train_data, val_data, test_data = split_data(data_with_lags, test_size=0.2, val_size=0.1)
+    feature_columns = [f'Index_Lag_{i}' for i in range(1, lags + 1)]
+    X_train, y_train = prepare_data(train_data, feature_columns)
+    X_val, y_val = prepare_data(val_data, feature_columns)
+    X_test, y_test = prepare_data(test_data, feature_columns)
+    X_train_scaled, X_val_scaled, X_test_scaled = scale_features(X_train, X_val, X_test)  
+    knn_model = build_and_train_knn_model(X_train_scaled, y_train, X_val_scaled, y_val)  
+    test_predictions = knn_model.predict(X_test_scaled)
+    test_mse = mean_squared_error(y_test, test_predictions)
+    print(f"KNN Regressor Test MSE: {test_mse}")
+    results = test_data[['Year', 'Month']].copy()
+    results['Actual'] = y_test
+    results['Predicted'] = test_predictions
+    results.to_csv('filepath/PredNino12_KNN.csv', index=False)
+    print("Predictions saved to 'PredNino12_KNN.csv'")
+
+**********************************************************
+
+LSTM model
+
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.callbacks import EarlyStopping
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+# Create lagged features
+def create_lagged_features(data, lags):
+    for lag in range(1, lags + 1):
+        data[f'Index_Lag_{lag}'] = data['Index'].shift(lag)
+    data = data.dropna().reset_index(drop=True)  
+    return data
+
+# Split data into training, validation, and test sets
+def split_data(data, test_size, val_size):
+    val_size_adjusted = val_size / (1 - test_size)
+    train_idx = int(len(data) * (1 - test_size - val_size_adjusted))
+    val_idx = train_idx + int(len(data) * val_size_adjusted)
+    train_data = data[:train_idx]
+    val_data = data[train_idx:val_idx]
+    test_data = data[val_idx:]
+    return train_data, val_data, test_data
+
+# Prepare data for model input
+def prepare_data(data, feature_columns):
+    X = data[feature_columns].values
+    y = data['Index'].values
+    return X, y
+
+# Scale data
+def scale_features(X_train, X_val, X_test):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_val_scaled, X_test_scaled
+
+# Function to build and train an LSTM model
+def build_and_train_lstm_model(X_train, y_train, X_val, y_val, input_shape):
+    model = Sequential([
+        LSTM(units=50, activation='relu', input_shape=input_shape),
+        Dense(units=1)
+    ])
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    model.compile(optimizer='adam', loss='mse')
+    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_val, y_val), callbacks=[early_stopping])
+    return model
+
+# Main execution block
+if __name__ == "__main__":
+    file_path = 'filepath/Nino12.txt'
+    data = load_and_preprocess_data(file_path)
+    lags = 6  # Number of lagged features to create
+    data_with_lags = create_lagged_features(data, lags)
+    train_data, val_data, test_data = split_data(data_with_lags, test_size=0.2, val_size=0.1)
+    feature_columns = [f'Index_Lag_{i}' for i in range(1, lags + 1)]
+    X_train, y_train = prepare_data(train_data, feature_columns)
+    X_val, y_val = prepare_data(val_data, feature_columns)
+    X_test, y_test = prepare_data(test_data, feature_columns)
+    X_train_scaled, X_val_scaled, X_test_scaled = scale_features(X_train, X_val, X_test)    
+    X_train_reshaped = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
+    X_val_reshaped = X_val_scaled.reshape((X_val_scaled.shape[0], X_val_scaled.shape[1], 1))
+    X_test_reshaped = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))   
+    lstm_model = build_and_train_lstm_model(X_train_reshaped, y_train, X_val_reshaped, y_val, input_shape=(lags, 1))   
+    test_loss = lstm_model.evaluate(X_test_reshaped, y_test)
+    predictions = lstm_model.predict(X_test_reshaped) 
+    results = pd.DataFrame({'Year': test_data['Year'], 'Month': test_data['Month'], 'Actual': y_test, 'Predicted': predictions.flatten()})
+    results.to_csv('filepath/PredNino12_LSTM.csv', index=False)
+    print(f"Test Loss: {test_loss}")
+    print("Predictions saved to 'PredNino12_LSTM.csv'")
+
+**************************************************************************************************+
+
+FFNN model
+
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.callbacks import EarlyStopping
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+# Create lagged features
+def create_lagged_features(data, lags):
+    for lag in range(1, lags + 1):
+        data[f'Index_Lag_{lag}'] = data['Index'].shift(lag)
+    data = data.dropna().reset_index(drop=True)  
+    return data
+
+# Split data into training, validation, and test sets
+def split_data(data, test_size, val_size):
+    val_size_adjusted = val_size / (1 - test_size)
+    train_idx = int(len(data) * (1 - test_size - val_size_adjusted))
+    val_idx = train_idx + int(len(data) * val_size_adjusted)
+    train_data = data[:train_idx]
+    val_data = data[train_idx:val_idx]
+    test_data = data[val_idx:]
+    return train_data, val_data, test_data
+
+# Prepare data for model input
+def prepare_data(data, feature_columns):
+    X = data[feature_columns].values
+    y = data['Index'].values
+    return X, y
+
+# Scale data
+def scale_features(X_train, X_val, X_test):
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_val_scaled, X_test_scaled
+
+# Function to build and train an FFNN model
+def build_and_train_ffnn_model(X_train, y_train, X_val, y_val, input_shape):
+    model = Sequential([
+        Dense(64, activation='relu', input_shape=input_shape),
+        Dense(32, activation='relu'),
+        Dense(1)
+    ])
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    model.compile(optimizer='adam', loss='mse')
+    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_val, y_val), callbacks=[early_stopping])
+    return model
+
+# Main execution block
+if __name__ == "__main__":
+    file_path = 'filepath/Nino12.txt'
+    data = load_and_preprocess_data(file_path)
+    lags = 6  # Number of lagged features to create
+    data_with_lags = create_lagged_features(data, lags)
+    train_data, val_data, test_data = split_data(data_with_lags, test_size=0.2, val_size=0.1)
+    feature_columns = [f'Index_Lag_{i}' for i in range(1, lags + 1)]
+    X_train, y_train = prepare_data(train_data, feature_columns)
+    X_val, y_val = prepare_data(val_data, feature_columns)
+    X_test, y_test = prepare_data(test_data, feature_columns)
+    X_train_scaled, X_val_scaled, X_test_scaled = scale_features(X_train, X_val, X_test)    
+    ffnn_model = build_and_train_ffnn_model(X_train_scaled, y_train, X_val_scaled, y_val, input_shape=(X_train_scaled.shape[1],))   
+    test_loss = ffnn_model.evaluate(X_test_scaled, y_test)
+    predictions = ffnn_model.predict(X_test_scaled)
+    results = pd.DataFrame({'Year': test_data['Year'], 'Month': test_data['Month'], 'Actual': y_test, 'Predicted': predictions.flatten()})
+    results.to_csv('filepath/PredNino12_FFNN.csv', index=False)
+    print(f"Test Loss: {test_loss}")
+    print("Predictions saved to 'PredNino12_FFNN.csv'")
+
+
+
+
+
