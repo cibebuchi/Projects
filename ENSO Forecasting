@@ -56,7 +56,7 @@ def build_and_train_model(X_train, y_train, X_val, y_val):
     return model
 
 # Execute the full analysis
-file_path = 'filepath/Nino12.txt'
+file_path = 'filepath/Nino.txt'
 data = load_and_preprocess_data(file_path)
 lags = 6  # Number of lagged features to create
 data_with_lags = create_lagged_features(data, lags)
@@ -73,7 +73,7 @@ print(f"Test MSE: {test_mse}")
 results = test_data[['Year', 'Month']].copy()
 results['Actual'] = y_test
 results['Predicted'] = test_predictions
-results.to_csv('filepath/PredNino12_SVR.txt', index=False)
+results.to_csv('filepath/PredNino_SVR.txt', index=False)
 print("Predictions saved to 'Nino4pred_SVR.csv'")
 
 
@@ -139,7 +139,7 @@ def build_and_train_gbr_model(X_train, y_train, X_val, y_val):
 
 # Main execution block
 if __name__ == "__main__":
-    file_path = 'filepath/Nino12.txt'
+    file_path = 'filepath/Nino.txt'
     data = load_and_preprocess_data(file_path)
     lags = 6  # Number of lagged features to create
     data_with_lags = create_lagged_features(data, lags)
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     results = test_data[['Year', 'Month']].copy()
     results['Actual'] = y_test
     results['Predicted'] = test_predictions
-    results.to_csv('filepath/PredNino12_GBR.csv', index=False)
+    results.to_csv('filepath/PredNino_GBR.csv', index=False)
     print("Predictions saved to 'PredNino4_GBR.csv'")
 
 *****************************************************************************************
@@ -219,7 +219,7 @@ def build_and_train_xgboost_model(X_train, y_train, X_val, y_val):
 
 # Main execution block
 if __name__ == "__main__":
-    file_path = 'filepath/Nino12.txt'
+    file_path = 'filepath/Nino.txt'
     data = load_and_preprocess_data(file_path)
     lags = 6  # Number of lagged features to create
     data_with_lags = create_lagged_features(data, lags)
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     results = test_data[['Year', 'Month']].copy()
     results['Actual'] = y_test
     results['Predicted'] = test_predictions
-    results.to_csv('filepath/PredNino12_XGB.csv', index=False)
+    results.to_csv('filepath/PredNino_XGB.csv', index=False)
     print("Predictions saved to 'PredNino4_XGB.csv'")
 
 
@@ -301,7 +301,7 @@ def build_and_train_knn_model(X_train, y_train, X_val, y_val, n_neighbors=5):
 
 # Main execution block
 if __name__ == "__main__":
-    file_path = 'filepath/Nino12.txt'
+    file_path = 'filepath/Nino.txt'
     data = load_and_preprocess_data(file_path)
     lags = 6  # Number of lagged features to create
     data_with_lags = create_lagged_features(data, lags)
@@ -318,8 +318,8 @@ if __name__ == "__main__":
     results = test_data[['Year', 'Month']].copy()
     results['Actual'] = y_test
     results['Predicted'] = test_predictions
-    results.to_csv('filepath/PredNino12_KNN.csv', index=False)
-    print("Predictions saved to 'PredNino12_KNN.csv'")
+    results.to_csv('filepath/PredNino_KNN.csv', index=False)
+    print("Predictions saved to 'PredNino_KNN.csv'")
 
 **********************************************************
 
@@ -385,7 +385,7 @@ def build_and_train_lstm_model(X_train, y_train, X_val, y_val, input_shape):
 
 # Main execution block
 if __name__ == "__main__":
-    file_path = 'filepath/Nino12.txt'
+    file_path = 'filepath/Nino.txt'
     data = load_and_preprocess_data(file_path)
     lags = 6  # Number of lagged features to create
     data_with_lags = create_lagged_features(data, lags)
@@ -471,7 +471,7 @@ def build_and_train_ffnn_model(X_train, y_train, X_val, y_val, input_shape):
 
 # Main execution block
 if __name__ == "__main__":
-    file_path = 'filepath/Nino12.txt'
+    file_path = 'filepath/Nino.txt'
     data = load_and_preprocess_data(file_path)
     lags = 6  # Number of lagged features to create
     data_with_lags = create_lagged_features(data, lags)
@@ -487,7 +487,7 @@ if __name__ == "__main__":
     results = pd.DataFrame({'Year': test_data['Year'], 'Month': test_data['Month'], 'Actual': y_test, 'Predicted': predictions.flatten()})
     results.to_csv('filepath/PredNino12_FFNN.csv', index=False)
     print(f"Test Loss: {test_loss}")
-    print("Predictions saved to 'PredNino12_FFNN.csv'")
+    print("Predictions saved to 'PredNino_FFNN.csv'")
 
 
 
