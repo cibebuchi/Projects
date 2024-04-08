@@ -323,8 +323,6 @@ if __name__ == "__main__":
 
 **********************************************************
 
-LSTM model
-
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
@@ -375,7 +373,8 @@ def scale_features(X_train, X_val, X_test):
 # Function to build and train an LSTM model
 def build_and_train_lstm_model(X_train, y_train, X_val, y_val, input_shape):
     model = Sequential([
-        LSTM(units=50, activation='relu', input_shape=input_shape),
+        LSTM(units=150, activation='relu', input_shape=input_shape, return_sequences=True),
+        LSTM(units=100, activation='relu'),
         Dense(units=1)
     ])
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
@@ -385,7 +384,7 @@ def build_and_train_lstm_model(X_train, y_train, X_val, y_val, input_shape):
 
 # Main execution block
 if __name__ == "__main__":
-    file_path = 'filepath/Nino.txt'
+    file_path = 'filepath/Nino4.txt'
     data = load_and_preprocess_data(file_path)
     lags = 6  # Number of lagged features to create
     data_with_lags = create_lagged_features(data, lags)
@@ -402,9 +401,9 @@ if __name__ == "__main__":
     test_loss = lstm_model.evaluate(X_test_reshaped, y_test)
     predictions = lstm_model.predict(X_test_reshaped) 
     results = pd.DataFrame({'Year': test_data['Year'], 'Month': test_data['Month'], 'Actual': y_test, 'Predicted': predictions.flatten()})
-    results.to_csv('filepath/PredNino12_LSTM.csv', index=False)
+    results.to_csv('filepath/PredNino4_LSTM.csv', index=False)
     print(f"Test Loss: {test_loss}")
-    print("Predictions saved to 'PredNino12_LSTM.csv'")
+    print("Predictions saved to 'PredNino_LSTM.csv'")
 
 **************************************************************************************************+
 
@@ -489,7 +488,74 @@ if __name__ == "__main__":
     print(f"Test Loss: {test_loss}")
     print("Predictions saved to 'PredNino_FFNN.csv'")
 
+******************************************************************************************************+
+Persistence and damp persistence model
 
+import pandas as pd
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+def persistence_model_6_month_predict(data):
+    data['Persistence_Prediction_6M'] = data['Index'].shift(6)
+    return data.dropna()
+
+if __name__ == "__main__":
+    file_path = 'filepath/Nino.txt'
+    data = load_and_preprocess_data(file_path)   
+    lags = 6  
+    data_with_lags = data.copy()   
+    persistence_predictions_6m = persistence_model_6_month_predict(data_with_lags)    
+    persistence_results_6m = pd.DataFrame({
+        'Year': persistence_predictions_6m['Year'],
+        'Month': persistence_predictions_6m['Month'],
+        'Actual': persistence_predictions_6m['Index'],
+        'Predicted_6M': persistence_predictions_6m['Persistence_Prediction_6M']
+    })    
+    save_path = 'filepath/Persistence_Model_6M_Predictions.csv'
+    persistence_results_6m.to_csv(save_path, index=False)
+    print(f"Predictions saved to '{save_path}'")
+
+
+import pandas as pd
+
+# Load and preprocess data
+def load_and_preprocess_data(file_path):
+    data = pd.read_csv(file_path, delim_whitespace=True, header=None)
+    data.columns = ['Year', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    data = data.melt(id_vars=['Year'], var_name='Month', value_name='Index')
+    months_dict = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+    data['Month'] = data['Month'].map(months_dict)
+    data = data.sort_values(by=['Year', 'Month']).reset_index(drop=True)
+    return data
+
+def damped_persistence_model_6_month_predict(data, damping_factor=0.98):
+    # Applying the damping factor to the value from 6 months ago
+    data['Damped_Persistence_Prediction_6M'] = data['Index'].shift(6) * damping_factor
+    return data.dropna()
+
+if __name__ == "__main__":
+    file_path = 'filepath/Nino34.txt'
+    data = load_and_preprocess_data(file_path)
+    lags = 6  # This variable is not used in the damped persistence model but is kept for consistency  
+    damping_factor = 0.98  # Example damping factor, adjust based on your needs
+    damped_persistence_predictions_6m = damped_persistence_model_6_month_predict(data, damping_factor=damping_factor)   
+    damped_persistence_results_6m = pd.DataFrame({
+        'Year': damped_persistence_predictions_6m['Year'],
+        'Month': damped_persistence_predictions_6m['Month'],
+        'Actual': damped_persistence_predictions_6m['Index'],
+        'Predicted_6M': damped_persistence_predictions_6m['Damped_Persistence_Prediction_6M']
+    }) 
+    save_path = 'filepath/Damped_Persistence_Model_6M_Predictions.csv'
+    damped_persistence_results_6m.to_csv(save_path, index=False) 
+    print(f"Predictions saved to '{save_path}'")
 
 
 
