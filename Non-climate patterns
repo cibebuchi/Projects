@@ -1,0 +1,293 @@
+SVR model
+
+
+import xarray as xr
+import pandas as pd
+from sklearn.svm import SVR
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+# Load the netCDF data
+ds = xr.open_dataset(r"C:\Users\User\Downloads\cru_ts4.06.1950-2021.pre.datsDJF.nc")
+pre = ds['pre']
+
+# Convert to DataFrame and pivot
+pre_df = pre.to_dataframe().reset_index()
+pre_df_pivot = pre_df.pivot(index='time', columns=['lat', 'lon'], values='pre').dropna(axis=1, how='all')
+
+# Scale precipitation data using StandardScaler
+scaler_pre = StandardScaler()
+scaled_pre_data = scaler_pre.fit_transform(pre_df_pivot)
+pre_df_pivot_scaled = pd.DataFrame(scaled_pre_data, index=pre_df_pivot.index, columns=pre_df_pivot.columns)
+
+# Load and prepare CSV data
+df = pd.read_csv(r"C:\Users\User\Desktop\TDJF_mean.csv", parse_dates=[0])
+df.index = pre_df_pivot.index
+
+# Standardize Node variables using StandardScaler
+for i in range(1, 11):
+    scaler_node = StandardScaler()
+    df[f'Node.{i}'] = scaler_node.fit_transform(df[[f'Node.{i}']])
+
+combined = pd.concat([pre_df_pivot_scaled, df.filter(regex='Node')], axis=1).dropna()
+
+results = []
+
+# Define thresholds
+threshold_positive = 0.5
+threshold_negative = -0.5
+
+for node in df.filter(regex='Node').columns:
+    for column in pre_df_pivot.columns:
+        y = combined[column].dropna()
+        X = combined[node]
+        # Define masks for ENSO phases
+        mask_positive = X >= threshold_positive
+        mask_neutral = (X > threshold_negative) & (X < threshold_positive)
+        mask_negative = X <= threshold_negative
+        def perform_regression(mask):
+            if mask.any():
+                X_filtered = X[mask].values.reshape(-1, 1)  # Reshape for compatibility with SVR
+                y_filtered = y[mask].values
+                model = SVR(kernel='rbf')  # Using the RBF kernel
+                model.fit(X_filtered, y_filtered)
+                predictions = model.predict(X_filtered)
+                return np.mean(predictions)  # Return the mean of the predictions
+            else:
+                return np.nan
+        results.append({
+            'lat': column[0],
+            'lon': column[1],
+            'Node': node,
+            'coef_positive': perform_regression(mask_positive),
+            'coef_neutral': perform_regression(mask_neutral),
+            'coef_negative': perform_regression(mask_negative)
+        })
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+print(results_df.head())
+results_df.to_csv(r'C:\Users\User\Desktop\ENSO_phase_regression_coefficients.csv', index=False)
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.basemap import Basemap
+from matplotlib.colors import Normalize, LinearSegmentedColormap
+
+def read_and_prepare(file_path, nodes):
+    data = pd.read_csv(file_path)
+    data = data[data['Node'].isin(nodes)]  # Filter data for all specified nodes
+    filtered_data = data[(data['lon'] >= -125) & (data['lon'] <= -66) & (data['lat'] >= 24) & (data['lat'] <= 49)]
+    return filtered_data.groupby(['lat', 'lon']).mean().reset_index()  # Calculate mean for each location across nodes
+
+def plot_coefficients(fig, axes, data, cmap, norm):
+    phases = ['coef_positive', 'coef_neutral', 'coef_negative']
+    titles = ['Positive Phase', 'Neutral Phase', 'Negative Phase']
+    scatter_objects = []
+    for j, phase in enumerate(phases):
+        ax = axes[j]
+        m = Basemap(projection='merc', llcrnrlat=24, urcrnrlat=49, llcrnrlon=-125, urcrnrlon=-66, resolution='i', ax=ax)
+        m.drawcoastlines()
+        m.drawcountries()
+        m.drawstates()
+        x, y = m(data['lon'].values, data['lat'].values)
+        scatter = m.scatter(x, y, c=data[phase], cmap=cmap, norm=norm, edgecolor='none', s=50, marker='o')
+        scatter_objects.append(scatter)
+        ax.set_title(titles[j], fontsize=18)
+    return scatter_objects
+
+colors = [(0, "red"), (0.5, "white"), (1, "blue")]
+cmap = LinearSegmentedColormap.from_list("custom_colormap", colors)
+norm = Normalize(vmin=-1, vmax=1)
+
+nodes = [f'Node.{i}' for i in range(1, 11)]
+file_path = r'C:\Users\User\Desktop\ENSO_phase_regression_coefficients.csv'
+data = read_and_prepare(file_path, nodes)
+
+# Plot for average predictions
+fig2, axes2 = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
+scatter_objects2 = plot_coefficients(fig2, axes2, data, cmap, norm)
+fig2.tight_layout(pad=3.0)
+cbar_ax2 = fig2.add_axes([0.15, 0.01, 0.7, 0.02])
+cbar2 = fig2.colorbar(scatter_objects2[0], cax=cbar_ax2, orientation='horizontal')
+cbar2.set_label('Standardized Precipitation', fontsize=16)
+cbar2.ax.tick_params(labelsize=14)
+plt.savefig(r"C:\Users\User\Desktop\ENSO_phase_regression_mean_mapsx.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+import numpy as np
+
+# Assuming 'data' contains the mean values for each latitude and longitude
+positive_coefficients = data['coef_positive'].values
+negative_coefficients = data['coef_negative'].values
+
+# Compute the congruence coefficient
+numerator = np.sum(positive_coefficients * negative_coefficients)
+denominator = np.sqrt(np.sum(positive_coefficients**2) * np.sum(negative_coefficients**2))
+congruence_coefficient = numerator / denominator
+
+print("Congruence Coefficient:", congruence_coefficient)
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.basemap import Basemap
+from matplotlib.colors import Normalize, LinearSegmentedColormap
+
+# Read data
+file_path = r'C:\Users\User\Desktop\ENSO_phase_regression_coefficients.csv'
+data = pd.read_csv(file_path)
+
+# Filter for the geographical extent
+data = data[(data['lon'] >= -125) & (data['lon'] <= -66) & (data['lat'] >= 24) & (data['lat'] <= 49)]
+
+# Calculate the sign agreement as the product of positive and negative coefficients
+data['sign_agreement'] = data['coef_positive'] * data['coef_negative']
+
+# Determine the range for the color normalization based on the maximum absolute value
+max_abs_value = data['sign_agreement'].abs().max()
+
+# Colors and colormap
+colors = ["red", "white", "blue"]  # Red: negative, White: neutral, Blue: positive
+cmap = LinearSegmentedColormap.from_list("custom", colors)
+norm = Normalize(vmin=-max_abs_value, vmax=max_abs_value)
+
+# Plotting
+fig, ax = plt.subplots(figsize=(10, 8))
+m = Basemap(projection='merc', llcrnrlat=24, urcrnrlat=49, llcrnrlon=-125, urcrnrlon=-66, resolution='i', ax=ax)
+m.drawcoastlines()
+m.drawcountries()
+m.drawstates()
+x, y = m(data['lon'].values, data['lat'].values)
+scatter = m.scatter(x, y, c=data['sign_agreement'], cmap=cmap, norm=norm, edgecolor='none', s=50, marker='o')
+
+# Colorbar
+cbar = plt.colorbar(scatter, orientation='horizontal', pad=0.05)
+cbar.set_label('Sign Agreement (Product of anomalies)', fontsize=19)
+cbar.ax.tick_params(labelsize=16)
+
+plt.title('Sign Agreement of ENSO Phase Coefficients', fontsize=22)
+plt.savefig(r"C:\Users\User\Desktop\ENSO_phase_signmapsx.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+OR
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.basemap import Basemap
+from matplotlib.colors import Normalize, LinearSegmentedColormap
+
+def read_and_prepare(file_path, node):
+    data = pd.read_csv(file_path)
+    data = data[data['Node'] == node]  # Filter data for specific Node
+    return data[(data['lon'] >= -125) & (data['lon'] <= -66) & (data['lat'] >= 24) & (data['lat'] <= 49)]
+
+def plot_coefficients(fig, axes, nodes, cmap, norm):
+    phases = ['coef_positive', 'coef_neutral', 'coef_negative']
+    titles = ['Positive Phase', 'Neutral Phase', 'Negative Phase']
+    file_path = r'C:\Users\User\Desktop\ENSO_phase_regression_coefficients.csv'
+    scatter_objects = []
+    for i, node in enumerate(nodes):
+        data = read_and_prepare(file_path, node)
+        for j, phase in enumerate(phases):
+            ax = axes[i, j]
+            m = Basemap(projection='merc', llcrnrlat=24, urcrnrlat=49, llcrnrlon=-125, urcrnrlon=-66, resolution='i', ax=ax)
+            m.drawcoastlines()
+            m.drawcountries()
+            m.drawstates()
+            x, y = m(data['lon'].values, data['lat'].values)
+            scatter = m.scatter(x, y, c=data[phase], cmap=cmap, norm=norm, edgecolor='none', s=50, marker='o')
+            scatter_objects.append(scatter)
+            if i == 0:  # Only set titles for the first row
+                ax.set_title(titles[j], fontsize=18)
+    return scatter_objects
+
+colors = [(0, "red"), (0.5, "white"), (1, "blue")]
+cmap = LinearSegmentedColormap.from_list("custom_colormap", colors)
+norm = Normalize(vmin=-1, vmax=1)
+
+nodes = [f'Node.{i}' for i in range(1, 11)]
+
+# Plot for individual nodes
+fig1, axes1 = plt.subplots(nrows=len(nodes), ncols=3, figsize=(15, 25))
+scatter_objects1 = plot_coefficients(fig1, axes1, nodes, cmap, norm)
+fig1.tight_layout(pad=3.0)
+plt.savefig(r"C:\Users\User\Desktop\ENSO_phase_regression_maps.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+# Create and save color bar separately
+fig_cbar, ax_cbar = plt.subplots(figsize=(6, 1))
+cbar = plt.colorbar(scatter_objects1[0], cax=ax_cbar, orientation='horizontal')
+cbar.set_label('Regression Coefficients', fontsize=16)
+ax_cbar.tick_params(labelsize=14)
+plt.savefig(r"C:\Users\User\Desktop\ENSO_phase_regression_maps_colorbar.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+*******************************************************************************
+GBR
+import xarray as xr
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+from sklearn.preprocessing import StandardScaler
+
+# Load the netCDF data
+ds = xr.open_dataset(r"C:\Users\User\Downloads\cru_ts4.06.1950-2021.pre.datsDJF.nc")
+pre = ds['pre']
+
+# Convert to DataFrame and pivot
+pre_df = pre.to_dataframe().reset_index()
+pre_df_pivot = pre_df.pivot(index='time', columns=['lat', 'lon'], values='pre').dropna(axis=1, how='all')
+
+# Scale precipitation data using StandardScaler
+scaler_pre = StandardScaler()
+scaled_pre_data = scaler_pre.fit_transform(pre_df_pivot)
+pre_df_pivot_scaled = pd.DataFrame(scaled_pre_data, index=pre_df_pivot.index, columns=pre_df_pivot.columns)
+
+# Load and prepare CSV data
+df = pd.read_csv(r"C:\Users\User\Desktop\TDJF_mean.csv", parse_dates=[0])
+df.index = pre_df_pivot.index
+
+# Standardize Node variables using StandardScaler
+for i in range(1, 11):
+    scaler_node = StandardScaler()
+    df[f'Node.{i}'] = scaler_node.fit_transform(df[[f'Node.{i}']])
+
+combined = pd.concat([pre_df_pivot_scaled, df.filter(regex='Node')], axis=1).dropna()
+
+results = []
+
+# Define thresholds
+threshold_positive = 0.5
+threshold_negative = -0.5
+
+for node in df.filter(regex='Node').columns:
+    for column in pre_df_pivot.columns:
+        y = combined[column].dropna()
+        X = combined[node].values.reshape(-1, 1)  # Reshape for compatibility with XGBoost
+        # Define masks for ENSO phases
+        mask_positive = X.ravel() >= threshold_positive
+        mask_neutral = (X.ravel() > threshold_negative) & (X.ravel() < threshold_positive)
+        mask_negative = X.ravel() <= threshold_negative
+        def perform_regression(mask):
+            if np.any(mask):
+                model = xgb.XGBRegressor(objective ='reg:squarederror', colsample_bytree = 0.3, learning_rate = 0.1,
+                                         max_depth = 5, alpha = 10, n_estimators = 100)  # Configure as needed
+                model.fit(X[mask], y[mask])
+                predictions = model.predict(X[mask])
+                return np.mean(predictions)  # Return the mean of the predictions
+            else:
+                return np.nan
+        results.append({
+            'lat': column[0],
+            'lon': column[1],
+            'Node': node,
+            'coef_positive': perform_regression(mask_positive),
+            'coef_neutral': perform_regression(mask_neutral),
+            'coef_negative': perform_regression(mask_negative)
+        })
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+print(results_df.head())
+results_df.to_csv(r'C:\Users\User\Desktop\ENSO_phase_regression_coefficients.csv', index=False)
