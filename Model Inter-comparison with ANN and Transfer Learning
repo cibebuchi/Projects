@@ -1,0 +1,229 @@
+"""
+Autoencoder + Transfer Learning to Evaluate GCMs
+================================================
+Example script demonstrating how to:
+1) Load and preprocess SLP datasets (ERA5 + GCM).
+2) Use Keras Tuner to find good hyperparameters for an autoencoder.
+3) Train the best model on ERA5 data.
+4) Apply transfer learning (fine-tuning) for each GCM to see how well they
+   adapt to the ERA5-trained latent space.
+
+Author: Chibuike Ibebuchi
+Date: 2025-01-01
+"""
+
+import os
+import numpy as np
+import pandas as pd
+
+# Keras / TensorFlow
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import Adam
+from keras.callbacks import EarlyStopping
+from tensorflow.keras.models import Model
+
+# Keras Tuner
+import keras_tuner as kt
+
+# Scikit-Learn
+from sklearn.preprocessing import MinMaxScaler
+
+
+# --------------------------------------------------------------------------
+# 1. Data Loading and Cleaning
+# --------------------------------------------------------------------------
+
+def remove_nan_columns(datasets):
+    """
+    Remove columns with NaN values across all provided pandas DataFrames.
+    Returns a list of cleaned DataFrames.
+    """
+    nan_columns = set()
+    for data in datasets:
+        nan_columns.update(data.columns[data.isna().any()])
+    cleaned_datasets = []
+    for data in datasets:
+        cleaned_data = data.drop(columns=nan_columns, errors='ignore')
+        cleaned_datasets.append(cleaned_data)
+    return cleaned_datasets
+
+
+def preprocess_data(data, scaler=None):
+    """
+    Scales the data with MinMaxScaler. If no scaler is provided, a new one is created and fitted.
+    Returns (scaled_data, scaler).
+    """
+    if scaler is None:
+        scaler = MinMaxScaler()
+        data_norm = scaler.fit_transform(data)
+        return data_norm, scaler
+    else:
+        data_norm = scaler.transform(data)
+        return data_norm
+
+
+# Example file paths (adjust to your setup)
+path_era5  = 'slpERA5.csv'
+path_cmcc  = 'slpCMCC.csv'
+
+
+# Load datasets
+slpERA5 = pd.read_csv(path_era5)
+slpCMCC = pd.read_csv(path_cmcc)
+
+
+# Remove columns with NaN values across relevant datasets
+slpERA5, slpCMCC = remove_nan_columns([slpERA5, slpCMCC])
+
+# Transpose to focus on "spatial patterns in columns, time in rows"
+slpERA5 = slpERA5.T
+slpCMCC = slpCMCC.T
+
+# Scale ERA5 data (fit MinMaxScaler)
+SLP_data_ERA5_norm, scaler = preprocess_data(slpERA5)
+
+
+# --------------------------------------------------------------------------
+# 2. Keras Tuner Setup for Autoencoder
+# --------------------------------------------------------------------------
+
+def build_autoencoder(hp):
+    """
+    Build autoencoder using hyperparameters chosen by Keras Tuner.
+    """
+    model = Sequential()
+    
+    # Input layer size is determined by SLP_data_ERA5_norm.shape[1]
+    input_dim = SLP_data_ERA5_norm.shape[1]
+    
+    # Choose the number of hidden layers
+    num_hidden_layers = hp.Int('num_hidden_layers', min_value=1, max_value=3)
+    
+    # First layer (encoder input)
+    model.add(Dense(
+        units=hp.Choice('units_0', [2, 4, 8, 16, 32, 64, 128, 256]),
+        activation='relu',
+        input_shape=(input_dim,))
+    )
+    
+    # Optional additional hidden layers
+    for i in range(num_hidden_layers - 1):
+        model.add(Dense(
+            units=hp.Choice(f'units_{i+1}', [2, 4, 8, 16, 32, 64, 128, 256]),
+            activation='relu'
+        ))
+    
+    # Output layer (decoder)
+    model.add(Dense(input_dim, activation='sigmoid'))
+    
+    # Choose the learning rate
+    lr = hp.Choice('learning_rate', [1e-2, 1e-3, 1e-4, 1e-5])
+    
+    model.compile(
+        optimizer=Adam(learning_rate=lr),
+        loss='mse'
+    )
+    
+    return model
+
+
+# Directory for saving tuner results (create if not existing)
+tuner_dir = "tuner_results"
+os.makedirs(tuner_dir, exist_ok=True)
+
+# Define Keras Tuner with Hyperband
+tuner = kt.Hyperband(
+    build_autoencoder,
+    objective='val_loss',
+    max_epochs=20,
+    factor=3,
+    directory=tuner_dir,
+    project_name='autoencoder_tuning'
+)
+
+# Early stopping callback for Tuner search
+stop_early = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+# Search for best hyperparameters
+tuner.search(SLP_data_ERA5_norm, SLP_data_ERA5_norm,
+             epochs=20,
+             validation_split=0.2,
+             callbacks=[stop_early],
+             shuffle=True)
+
+# Retrieve best hyperparameters
+best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
+print("Best hyperparameters found:")
+print(best_hp.values)
+
+# --------------------------------------------------------------------------
+# 3. Build and Train Best Model on ERA5
+# --------------------------------------------------------------------------
+
+best_model = tuner.hypermodel.build(best_hp)
+
+history = best_model.fit(SLP_data_ERA5_norm, SLP_data_ERA5_norm,
+                         epochs=50,
+                         batch_size=32,
+                         shuffle=True,
+                         validation_split=0.2,
+                         callbacks=[stop_early])
+
+
+def get_encoder(autoenc_model):
+    """
+    Extracts the encoder portion from the final autoencoder model.
+    Assumes the last layer is the output (decoder) for reconstruction.
+    This function identifies the last layer before the output to be the "encoder output."
+    """
+    # Identify all but the last layer as the encoder
+    encoder_input = autoenc_model.layers[0].input
+    # If you have (num_hidden_layers + 1) Dense layers, the second-to-last
+    # should be the final hidden layer. We assume that here:
+    encoder_output = autoenc_model.layers[-2].output
+    encoder_model = Model(inputs=encoder_input, outputs=encoder_output)
+    return encoder_model
+
+encoder = get_encoder(best_model)
+encoded_ERA5 = encoder.predict(SLP_data_ERA5_norm)
+print("Encoded ERA5 shape:", encoded_ERA5.shape)
+
+
+# --------------------------------------------------------------------------
+# 4. Transfer Learning (Fine-tuning) on Each GCM
+# --------------------------------------------------------------------------
+
+
+SLP_data_CMCC_norm = preprocess_data(slpCMCC, scaler)
+
+# Define a function to fine-tune the autoencoder
+
+def build_and_fine_tune(best_hp, data, epochs=20, lr=1e-5):
+    ft_model = tuner.hypermodel.build(best_hp)
+    ft_model.set_weights(best_model.get_weights())
+    ft_model.compile(optimizer=Adam(learning_rate=lr), loss='mse')   
+    es_callback = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)   
+    ft_model.fit(data, data,
+                 epochs=epochs,
+                 batch_size=32,
+                 shuffle=True,
+                 validation_split=0.2,
+                 callbacks=[es_callback],
+                 verbose=0)
+    ft_encoder = get_encoder(ft_model)
+    encoded_data = ft_encoder.predict(data)
+    return encoded_data
+
+encoded_CMCC = build_and_fine_tune(best_hp, SLP_data_CMCC_norm, epochs=20, lr=1e-5)
+print("Encoded CMCC shape:", encoded_CMCC.shape)
+
+
+# --------------------------------------------------------------------------
+# 5. Save or Compare Results
+# --------------------------------------------------------------------------
+
+pd.DataFrame(encoded_ERA5).to_csv("encoded_ERA5.csv", index=False)
+pd.DataFrame(encoded_CMCC).to_csv("encoded_CMCC.csv", index=False)
+
+print("Processing complete. Encoded data saved.")
